@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>낚시어선 안전항로 추천 AI — 통영·여수 남해</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{--ink:#1f2d3d;--accent:#1F4E79;--accent2:#2E75B6;}
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:var(--ink);background:#eef2f7;}
+  header{background:linear-gradient(135deg,#15375c,#2E75B6);color:#fff;padding:12px 18px;}
+  header h1{margin:0;font-size:18px;}
+  header p{margin:3px 0 0;font-size:12px;opacity:.92;}
+  .wrap{display:flex;height:calc(100vh - 60px);}
+  #map{flex:1;}
+  .side{width:362px;background:#fff;border-left:1px solid #d9e1ec;overflow-y:auto;padding:13px;}
+  .sec{border:1px solid #dce6f1;border-radius:10px;padding:11px 12px;margin-bottom:11px;background:#fff;}
+  .sec h3{margin:0 0 9px;font-size:13px;color:var(--accent);display:flex;align-items:center;gap:6px;}
+  label{display:block;font-size:11.5px;font-weight:700;color:#33506e;margin:7px 0 3px;}
+  select,button,input[type=range]{width:100%;}
+  select{padding:6px 8px;border:1px solid #c5d2e3;border-radius:7px;font-size:12.5px;background:#fff;}
+  button{padding:8px;border:0;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;background:#2E75B6;color:#fff;}
+  button.ghost{background:#eaf1fa;color:#1F4E79;}
+  button.set{background:#e8f3ec;color:#1d7a46;border:1px solid #bfe3cd;}
+  button.set.active{background:#1d7a46;color:#fff;}
+  .row2{display:flex;gap:7px;}
+  .row2>*{flex:1;}
+  .pillrow{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+  .kv{font-size:12px;background:#f3f7fc;border:1px solid #e0eaf5;border-radius:8px;padding:6px 8px;flex:1;text-align:center;}
+  .kv b{display:block;font-size:15px;color:#15375c;}
+  .badge{display:inline-block;padding:2px 10px;border-radius:20px;color:#fff;font-weight:800;font-size:12.5px;}
+  .why{margin:6px 0 0;padding-left:16px;font-size:12px;line-height:1.55;}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+  .muted{color:#7286a0;font-size:11px;line-height:1.5;}
+  .advice{padding:8px 10px;border-radius:8px;font-weight:800;font-size:13px;text-align:center;margin-top:8px;}
+  .hi-list .r{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #e3ebf5;cursor:pointer;font-size:12px;}
+  .hi-list .r:hover{background:#eef5ff;}
+  .slval{font-weight:800;color:#15375c;}
+  small.note{font-size:10.5px;color:#90a0b6;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧭 소형 낚시어선 안전항로 추천 AI · 통영·여수 남해</h1>
+  <p>실시간 해양기상(Open‑Meteo) + 사고위험 예측을 결합해 최저위험 항로를 추천합니다</p>
+</header>
+<div class="wrap">
+  <div id="map"></div>
+  <div class="side">
+
+    <!-- 1) 항로 추천 -->
+    <div class="sec">
+      <h3>① 출발지·도착지</h3>
+      <label>출항지(어항) 선택</label>
+      <select id="port"></select>
+      <div class="row2" style="margin-top:7px">
+        <button class="set" id="setOrigin">📍 출발지 지정(지도클릭)</button>
+        <button class="set" id="setDest">🎯 도착지 지정(지도클릭)</button>
+      </div>
+      <button class="ghost" id="myloc" style="margin-top:7px">현재 내 위치를 출발지로</button>
+      <div class="muted" id="odtext" style="margin-top:6px">출발지·도착지를 지정하세요.</div>
+    </div>
+
+    <!-- 2) 해양기상 -->
+    <div class="sec">
+      <h3>② 현재 해양기상</h3>
+      <button id="getwx">🌊 출발지 실시간 기상 불러오기</button>
+      <div class="pillrow">
+        <div class="kv">파고<b id="kvWave">- m</b></div>
+        <div class="kv">풍속<b id="kvWind">- ㎧</b></div>
+        <div class="kv">돌풍<b id="kvGust">- ㎧</b></div>
+      </div>
+      <label>파고 직접 입력 (m): <span class="slval" id="lWave">1.0</span></label>
+      <input type="range" id="wave" min="0" max="5" step="0.1" value="1.0"/>
+      <label>풍속 직접 입력 (㎧): <span class="slval" id="lWind">7</span></label>
+      <input type="range" id="wind" min="0" max="25" step="1" value="7"/>
+      <div class="advice" id="wxAdvice">기상 입력 대기</div>
+      <small class="note">※ 실시간 호출 실패 시 슬라이더 값으로 계산합니다(오프라인 대비).</small>
+    </div>
+
+    <!-- 추천 결과 -->
+    <div class="sec">
+      <h3>③ 항로 추천</h3>
+      <button id="recommend">🚢 안전항로 추천 실행</button>
+      <div id="routeResult" class="muted" style="margin-top:8px">출발·도착·기상을 입력하고 실행하세요.</div>
+    </div>
+
+    <!-- 표시 설정 -->
+    <div class="sec">
+      <h3>표시 설정</h3>
+      <div class="row2">
+        <div><label>계절</label><select id="season"></select></div>
+        <div><label>시간대</label><select id="slot"></select></div>
+      </div>
+      <label style="margin-top:8px"><input type="checkbox" id="showRoute" checked style="width:auto"/> 낚시어선 항로 표시</label>
+    </div>
+
+    <!-- 격자 정보 -->
+    <div class="sec" id="info"><h3>격자 정보</h3>
+      <p class="muted">색칠된 격자를 클릭하면 위험등급·원인이 표시됩니다.</p></div>
+
+    <!-- 범례 -->
+    <div class="sec"><h3>위험등급</h3>
+      <div class="legend" style="font-size:11.5px">
+        <i style="background:#2ca25f"></i>낮음 <i style="background:#fec44f"></i>보통
+        <i style="background:#fe9929"></i>주의 <i style="background:#e34a33"></i>위험
+      </div>
+      <div class="muted" style="margin-top:5px">파란 굵은 선 = 추천 안전항로, 회색 점선 = 직선(비교).</div>
+    </div>
+
+    <!-- 고위험 -->
+    <div class="sec"><h3>현재 조건 고위험 해역 TOP</h3><div class="hi-list" id="hilist"></div></div>
+    <p class="muted">※ 출항·항로 판단을 돕는 보조정보이며 최종 결정·책임은 이용자에게 있습니다.</p>
+  </div>
+</div>
+
+<script>
+const META = /*__META__*/;
+const RISK = /*__RISK__*/;
+const CELL = META.cell;
+const COLOR={"낮음":"#2ca25f","보통":"#fec44f","주의":"#fe9929","위험":"#e34a33"};
+const SCORE={"낮음":1,"보통":2,"주의":3.2,"위험":5};
+
+// ---------- 지도 ----------
+const map=L.map('map').setView([34.78,128.2],9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap'}).addTo(map);
+let gridLayer=L.layerGroup().addTo(map), routeLayer=L.layerGroup().addTo(map),
+    portLayer=L.layerGroup().addTo(map), pathLayer=L.layerGroup().addTo(map);
+
+// ---------- 컨트롤 ----------
+const seasonSel=el('season'),slotSel=el('slot'),portSel=el('port'),
+      waveR=el('wave'),windR=el('wind'),showRoute=el('showRoute');
+function el(id){return document.getElementById(id);}
+for(const[k,v]of Object.entries(META.season_name))seasonSel.add(new Option(v,k));
+for(const[k,v]of Object.entries(META.slot_name))slotSel.add(new Option(v+"시",k));
+// 현재 날짜/시간으로 기본값
+const now=new Date(), mon=now.getMonth()+1;
+seasonSel.value=String({12:3,1:3,2:3,3:0,4:0,5:0,6:1,7:1,8:1,9:2,10:2,11:2}[mon]);
+slotSel.value=String(Math.min(3,Math.floor(now.getHours()/6)));
+const regionPorts=META.ports.filter(p=>inBox(p.lon,p.lat)&&p.cnt>0).sort((a,b)=>b.cnt-a.cnt);
+portSel.add(new Option("(직접 지정)",""));
+regionPorts.forEach(p=>portSel.add(new Option(`${p.name||'항'} (어선 ${p.cnt})`,p.lon+","+p.lat)));
+function inBox(lo,la){return lo>META.bbox[0]&&lo<META.bbox[2]&&la>META.bbox[1]&&la<META.bbox[3];}
+
+// ---------- 격자 인덱스(위험맵용) ----------
+const byRC={}, cellsArr=[];
+for(const gid in RISK.grid){const c=RISK.grid[gid]; c.gid=gid; byRC[c.row+","+c.col]=gid; cellsArr.push(c);}
+function nearestCell(lat,lon){let best=null,bd=1e9;for(const c of cellsArr){const d=(c.lat-lat)**2+(c.lon-lon)**2;if(d<bd){bd=d;best=c;}}return best;}
+
+// ---------- 정밀 육지마스크: 경로 선분이 '육지'에 닿는지 검사 ----------
+const LAND=META.land;
+function isLand(lat,lon){
+  if(!LAND) return false;
+  const c=Math.floor((lon-LAND.lon0)/LAND.d), r=Math.floor((lat-LAND.lat0)/LAND.d);
+  if(r<0||r>=LAND.nrow||c<0||c>=LAND.ncol) return false;
+  return LAND.rows[r].charCodeAt(c)===49; // '1'
+}
+// 두 점 사이 선분이 육지를 지나가는가(0.004° 간격 샘플)
+function segHitsLand(la1,lo1,la2,lo2){
+  const n=Math.max(2,Math.ceil(Math.max(Math.abs(la2-la1),Math.abs(lo2-lo1))/0.004));
+  for(let i=0;i<=n;i++){const f=i/n; if(isLand(la1+(la2-la1)*f, lo1+(lo2-lo1)*f)) return true;}
+  return false;
+}
+
+// ---------- 상태 ----------
+let origin=null, dest=null, setMode=null, weather=null;
+
+// ---------- 항로/출항지 그리기 ----------
+function drawRoutes(){routeLayer.clearLayers();if(!showRoute.checked)return;
+  (META.routes||[]).forEach(r=>{if(r.pts&&r.pts.length>1)
+    L.polyline(r.pts.map(p=>[p[1],p[0]]),{color:'#5b8ec9',weight:1.1,opacity:.4}).addTo(routeLayer);});}
+function drawPorts(){portLayer.clearLayers();
+  regionPorts.forEach(p=>L.circleMarker([p.lat,p.lon],{radius:3,color:'#0a7',fillColor:'#0a7',fillOpacity:.85,weight:0})
+     .bindTooltip(`${p.name} · 어선 ${p.cnt}척`).addTo(portLayer));
+  (META.kcg||[]).forEach(k=>L.marker([k.lat,k.lon],{icon:L.divIcon({className:'',html:'🛟',iconSize:[15,15]})})
+     .bindTooltip('해경: '+k.name).addTo(portLayer));}
+
+// ---------- 기상 → 위험 가중 ----------
+function weatherMult(){
+  const wv=+waveR.value, wd=+windR.value;
+  const fw= wv<1?1: wv<2?1.25: wv<3?1.7: wv<4?2.3:3.0;
+  const fwind= wd<8?1: wd<11?1.15: wd<14?1.5: wd<17?2.0:2.6;
+  return Math.min(3.3, fw*fwind);
+}
+function departAdvice(){
+  const wv=+waveR.value, wd=+windR.value;
+  if(wv>=3||wd>=14) return ["출항 자제 — 풍랑특보 수준","#e34a33"];
+  if(wv>=2||wd>=11) return ["주의 — 기상 악화","#fe9929"];
+  return ["양호 — 출항 가능","#2ca25f"];
+}
+function adjLevel(p){
+  const adj=Math.min(0.999,p*weatherMult());
+  const t=RISK.thresholds;
+  return adj>=t.q95?"위험":adj>=t.q80?"주의":adj>=t.q50?"보통":"낮음";
+}
+
+// 점(lat,lon)이 속한 2km 위험격자 찾기
+function riskCellAt(lat,lon){
+  const r=Math.floor((lat-META.bbox[1])/CELL), c=Math.floor((lon-META.bbox[0])/CELL);
+  const g=byRC[r+","+c]; return g?RISK.grid[g]:null;
+}
+const RGB={"낮음":[44,162,95],"보통":[254,196,79],"주의":[254,153,41],"위험":[227,74,51]};
+const ALPHA={"낮음":120,"보통":160,"주의":195,"위험":225};
+
+// ---------- 위험 히트맵: 0.9km 정밀(해안선 따라) 캔버스 오버레이 ----------
+let heatOverlay=null;
+function render(){
+  const key=seasonSel.value+"_"+slotSel.value;
+  const W=LAND.ncol, H=LAND.nrow;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const ctx=cv.getContext('2d'); const img=ctx.createImageData(W,H);
+  for(let r=0;r<H;r++){const la=LAND.lat0+(r+0.5)*LAND.d;
+    for(let c=0;c<W;c++){const di=4*((H-1-r)*W+c);   // 캔버스는 위가 y=0 → 위도 뒤집기
+      if(LAND.rows[r].charCodeAt(c)===49){img.data[di+3]=0; continue;}  // 육지=투명
+      const lo=LAND.lon0+(c+0.5)*LAND.d, cell=riskCellAt(la,lo);
+      if(!cell||!cell.cells[key]){img.data[di+3]=0; continue;}
+      const lv=adjLevel(cell.cells[key].p), col=RGB[lv];
+      img.data[di]=col[0]; img.data[di+1]=col[1]; img.data[di+2]=col[2]; img.data[di+3]=ALPHA[lv];
+    }}
+  ctx.putImageData(img,0,0);
+  const bounds=[[LAND.lat0,LAND.lon0],[LAND.lat0+H*LAND.d,LAND.lon0+W*LAND.d]];
+  if(heatOverlay)map.removeLayer(heatOverlay);
+  heatOverlay=L.imageOverlay(cv.toDataURL(),bounds,{opacity:0.72,interactive:false}).addTo(map);
+  // 고위험 해역 TOP(위험격자 기준)
+  const rank=[];
+  for(const gid in RISK.grid){const c=RISK.grid[gid],cell=c.cells[key];if(!cell)continue;rank.push({c,lv:adjLevel(cell.p),p:cell.p});}
+  rank.sort((a,b)=>b.p-a.p);
+  const hl=el('hilist'); hl.innerHTML='';
+  rank.slice(0,8).forEach(r=>{const d=document.createElement('div');d.className='r';
+    d.innerHTML=`<span><b>${r.c.place||'남해 해상'}</b><br><span class="muted">위도 ${r.c.lat.toFixed(3)}, 경도 ${r.c.lon.toFixed(3)}</span></span>
+      <span class="badge" style="background:${COLOR[r.lv]};padding:1px 8px;font-size:11px;align-self:center">${r.lv}</span>`;
+    d.onclick=()=>{map.setView([r.c.lat,r.c.lon],12);showInfoCell(r.c);}; hl.appendChild(d);});
+  drawRoutes();
+}
+
+function showInfoCell(c){
+  const key=seasonSel.value+"_"+slotSel.value, cell=c.cells[key]; if(!cell)return;
+  const lv=adjLevel(cell.p), why=(cell.why||[]).map(w=>`<li>${w}</li>`).join('');
+  el('info').innerHTML=`<h3>${c.place||'남해 해상'} <span class="badge" style="background:${COLOR[lv]}">${lv}</span></h3>
+    <div class="muted">위도 ${c.lat.toFixed(3)}, 경도 ${c.lon.toFixed(3)}</div>
+    <div class="muted">대표 위험유형: <b>${cell.type}</b> · 기상반영 위험확률 ${(Math.min(1,cell.p*weatherMult())*100).toFixed(1)}%</div>
+    <div style="font-weight:700;font-size:12.5px;margin-top:7px">주요 원인</div><ul class="why">${why}</ul>`;
+}
+
+// ---------- 출발/도착 지정 ----------
+el('setOrigin').onclick=()=>toggleSet('origin');
+el('setDest').onclick=()=>toggleSet('dest');
+function toggleSet(m){setMode=setMode===m?null:m;
+  el('setOrigin').classList.toggle('active',setMode==='origin');
+  el('setDest').classList.toggle('active',setMode==='dest');}
+map.on('click',e=>{
+  if(setMode){pickFromMap(e.latlng.lat,e.latlng.lng);}
+  else{const c=riskCellAt(e.latlng.lat,e.latlng.lng); if(c)showInfoCell(c);}
+});
+// 클릭/선택 지점을 '가장 가까운 항행 바다칸'으로 스냅 → 마커와 경로 시작점이 정확히 일치
+function snapWater(lat,lon){const w=navNearestWater(lat,lon); if(!w)return {lat,lon}; const ll=navLL(w[0],w[1]); return {lat:ll[0],lon:ll[1]};}
+function pickFromMap(lat,lon){
+  const s=snapWater(lat,lon);
+  if(setMode==='origin'){origin=s; portSel.value="";} else if(setMode==='dest'){dest=s;}
+  setMode=null; el('setOrigin').classList.remove('active'); el('setDest').classList.remove('active');
+  markOD(); if(origin&&dest)recommend();}
+portSel.onchange=()=>{if(portSel.value){const[lo,la]=portSel.value.split(",").map(Number);origin=snapWater(la,lo);markOD();if(origin&&dest)recommend();}};
+el('myloc').onclick=()=>{if(!navigator.geolocation){alert("위치 사용 불가");return;}
+  navigator.geolocation.getCurrentPosition(p=>{origin=snapWater(p.coords.latitude,p.coords.longitude);markOD();map.setView([origin.lat,origin.lon],11);if(dest)recommend();},
+   ()=>alert("위치 권한이 필요합니다"));};
+let odMarkers=L.layerGroup().addTo(map);
+function markOD(){odMarkers.clearLayers();
+  if(origin)L.marker([origin.lat,origin.lon],{icon:L.divIcon({html:'<div style="background:#1d7a46;color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;font-weight:800">출</div>',className:'',iconSize:[22,22]})}).addTo(odMarkers);
+  if(dest)L.marker([dest.lat,dest.lon],{icon:L.divIcon({html:'<div style="background:#b5341f;color:#fff;border-radius:50%;width:22px;height:22px;line-height:22px;text-align:center;font-weight:800">도</div>',className:'',iconSize:[22,22]})}).addTo(odMarkers);
+  el('odtext').innerHTML=(origin?`출발 (${origin.lat.toFixed(3)}, ${origin.lon.toFixed(3)})`:"출발 미지정")+
+    "<br>"+(dest?`도착 (${dest.lat.toFixed(3)}, ${dest.lon.toFixed(3)})`:"도착 미지정");}
+
+// ---------- 실시간 기상 ----------
+el('getwx').onclick=async()=>{
+  const loc=origin||{lat:34.78,lon:128.2};
+  el('getwx').textContent="불러오는 중...";
+  try{
+    const m=await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${loc.lat}&longitude=${loc.lon}&current=wave_height,wave_period,wave_direction&timezone=Asia%2FSeoul`).then(r=>r.json());
+    const w=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=Asia%2FSeoul`).then(r=>r.json());
+    const wave=m.current?.wave_height, wind=w.current?.wind_speed_10m, gust=w.current?.wind_gusts_10m;
+    if(wave!=null){waveR.value=Math.min(5,wave); el('kvWave').textContent=wave.toFixed(1)+" m";}
+    if(wind!=null){windR.value=Math.min(25,Math.round(wind)); el('kvWind').textContent=wind.toFixed(1)+" ㎧";}
+    if(gust!=null) el('kvGust').textContent=gust.toFixed(1)+" ㎧";
+    syncWx();
+  }catch(e){
+    alert("실시간 기상 호출 실패(오프라인이거나 브라우저 차단). 아래 슬라이더로 직접 입력하세요.");
+  }
+  el('getwx').textContent="🌊 출발지 실시간 기상 불러오기";
+};
+function syncWx(){el('lWave').textContent=(+waveR.value).toFixed(1);el('lWind').textContent=windR.value;
+  const[a,col]=departAdvice();const ad=el('wxAdvice');ad.textContent=a;ad.style.background=col+"22";ad.style.color=col;
+  render(); if(origin&&dest) recommend();}
+waveR.oninput=syncWx; windR.oninput=syncWx;
+
+// ---------- 안전항로 추천: 0.9km 정밀 '바다격자'(육지마스크 기반) 위 다익스트라 ----------
+//   모든 물 칸이 노드 → 바다는 어디든 연결되고, 육지 칸은 노드가 아니라 통과 불가.
+const NC=LAND.ncol, NR=LAND.nrow;
+function water(r,c){return r>=0&&r<NR&&c>=0&&c<NC&&LAND.rows[r].charCodeAt(c)!==49;}
+function navLL(r,c){return [LAND.lat0+(r+0.5)*LAND.d, LAND.lon0+(c+0.5)*LAND.d];}
+function navRisk(la,lo){const c=riskCellAt(la,lo); if(!c)return 0.25;
+  const cell=c.cells[seasonSel.value+"_"+slotSel.value]; return cell?Math.min(1,cell.p*weatherMult()):0.25;}
+function navNearestWater(lat,lon){
+  let r0=Math.max(0,Math.min(NR-1,Math.floor((lat-LAND.lat0)/LAND.d)));
+  let c0=Math.max(0,Math.min(NC-1,Math.floor((lon-LAND.lon0)/LAND.d)));
+  if(water(r0,c0))return [r0,c0];
+  for(let rad=1;rad<60;rad++)for(let dr=-rad;dr<=rad;dr++)for(let dc=-rad;dc<=rad;dc++){
+    if(Math.max(Math.abs(dr),Math.abs(dc))!==rad)continue;
+    if(water(r0+dr,c0+dc))return [r0+dr,c0+dc];}
+  return null;
+}
+const DIRS=[[1,0,1],[-1,0,1],[0,1,1],[0,-1,1],[1,1,1.41],[1,-1,1.41],[-1,1,1.41],[-1,-1,1.41]];
+function navDijkstra(s,t){
+  const sI=s[0]*NC+s[1], tI=t[0]*NC+t[1];
+  const dist=new Map([[sI,0]]), prev=new Map();
+  const heap=[[0,sI]];
+  const push=(c,n)=>{heap.push([c,n]);let i=heap.length-1;while(i>0){const p=(i-1)>>1;if(heap[p][0]<=heap[i][0])break;[heap[p],heap[i]]=[heap[i],heap[p]];i=p;}};
+  const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let i=0;for(;;){let l=2*i+1,r=2*i+2,m=i;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===i)break;[heap[m],heap[i]]=[heap[i],heap[m]];i=m;}}return top;};
+  while(heap.length){const[cd,u]=pop(); if(cd>(dist.get(u)??Infinity))continue; if(u===tI)break;
+    const ur=Math.floor(u/NC), uc=u%NC;
+    for(const[dr,dc,w] of DIRS){const vr=ur+dr,vc=uc+dc;
+      if(!water(vr,vc))continue;
+      if(dr&&dc&&(!water(ur+dr,uc)||!water(ur,uc+dc)))continue;  // 대각선은 양옆이 모두 바다일 때만(육지 모서리 침범 방지)
+      const[vla,vlo]=navLL(vr,vc), vI=vr*NC+vc;
+      const nd=cd+w*(0.25+navRisk(vla,vlo));
+      if(nd<(dist.get(vI)??Infinity)){dist.set(vI,nd);prev.set(vI,u);push(nd,vI);}}}
+  if(!dist.has(tI))return null;
+  const path=[]; let k=tI; while(k!==undefined){const r=Math.floor(k/NC),c=k%NC; path.unshift(navLL(r,c)); k=prev.get(k);} return path;
+}
+function smoothSea(raw){let pts=chaikin(raw,3); pts=pts.filter(p=>!isLand(p[0],p[1])); return pts.length<2?raw:pts;}
+el('recommend').onclick=recommend;
+function recommend(){
+  if(!origin||!dest){el('routeResult').innerHTML='<span style="color:#b5341f">출발지와 도착지를 먼저 지정하세요.</span>';return;}
+  pathLayer.clearLayers();
+  L.polyline([[origin.lat,origin.lon],[dest.lat,dest.lon]],{color:'#888',weight:2,dashArray:'6,7',opacity:.65}).addTo(pathLayer);
+  const s=navNearestWater(origin.lat,origin.lon), t=navNearestWater(dest.lat,dest.lon);
+  if(!s||!t){el('routeResult').innerHTML='<span style="color:#b5341f">가까운 바다 지점을 찾지 못했습니다.</span>';return;}
+  const path=navDijkstra(s,t);
+  if(!path){el('routeResult').innerHTML='<span style="color:#b5341f">바다로 연결된 경로를 찾지 못했습니다(섬으로 막힘).</span>';return;}
+  const head=segHitsLand(origin.lat,origin.lon,path[0][0],path[0][1])?[]:[[origin.lat,origin.lon]];
+  const tail=segHitsLand(dest.lat,dest.lon,path[path.length-1][0],path[path.length-1][1])?[]:[[dest.lat,dest.lon]];
+  const pts=smoothSea([...head,...path,...tail]);
+  L.polyline(pts,{color:'#0b2e59',weight:5,opacity:.92,lineJoin:'round',lineCap:'round'}).addTo(pathLayer);
+  L.polyline(pts,{color:'#36a2ff',weight:2.4,opacity:.95,lineJoin:'round',lineCap:'round'}).addTo(pathLayer);
+  // 요약(경유점 위험·거리)
+  let maxlv="낮음",sum=0,km=0,n=0;
+  for(let i=0;i<path.length;i++){const cell=riskCellAt(path[i][0],path[i][1]);
+    const lv=cell&&cell.cells[seasonSel.value+"_"+slotSel.value]?adjLevel(cell.cells[seasonSel.value+"_"+slotSel.value].p):"낮음";
+    if(SCORE[lv]>SCORE[maxlv])maxlv=lv; sum+=SCORE[lv]; n++;
+    if(i)km+=haversine(path[i-1][1],path[i-1][0],path[i][1],path[i][0]);}
+  const avg=(sum/Math.max(n,1)).toFixed(2), [adv,col]=departAdvice();
+  let rw = maxlv==="위험"?["경로상 ‘위험’ 구간 포함 — 우회/연기 권고","#e34a33"]
+          :maxlv==="주의"?["경로상 ‘주의’ 구간 있음 — 신중 운항","#fe9929"]
+          :["경로 위험 낮음 — 운항 가능","#2ca25f"];
+  el('routeResult').innerHTML=
+    `<div class="advice" style="background:${col}22;color:${col}">출항 판단: ${adv}</div>
+     <div class="pillrow"><div class="kv">총거리<b>${km.toFixed(1)} km</b></div>
+        <div class="kv">최대위험<b>${maxlv}</b></div>
+        <div class="kv">평균위험<b>${avg}</b></div></div>
+     <div class="advice" style="background:${rw[1]}22;color:${rw[1]};margin-top:7px">${rw[0]}</div>
+     <div class="muted" style="margin-top:6px">파고 ${(+waveR.value).toFixed(1)}m · 풍속 ${windR.value}㎧ 반영 · 파란선=추천(바닷길·최저위험), 점선=직선</div>`;
+  map.fitBounds(L.latLngBounds(pts).pad(0.3));
+}
+// Chaikin 코너커팅: 꺾인 격자경로의 모서리를 잘라 부드러운 곡선으로
+function chaikin(pts,iters){
+  for(let it=0;it<iters;it++){
+    if(pts.length<3)break;
+    const out=[pts[0]];
+    for(let i=0;i<pts.length-1;i++){
+      const a=pts[i],b=pts[i+1];
+      out.push([a[0]*0.75+b[0]*0.25, a[1]*0.75+b[1]*0.25]);
+      out.push([a[0]*0.25+b[0]*0.75, a[1]*0.25+b[1]*0.75]);
+    }
+    out.push(pts[pts.length-1]); pts=out;
+  }
+  return pts;
+}
+function haversine(lo1,la1,lo2,la2){const R=6371,d=Math.PI/180;
+  const dLa=(la2-la1)*d,dLo=(lo2-lo1)*d;
+  const a=Math.sin(dLa/2)**2+Math.cos(la1*d)*Math.cos(la2*d)*Math.sin(dLo/2)**2;
+  return R*2*Math.asin(Math.sqrt(a));}
+
+[seasonSel,slotSel].forEach(e=>e.addEventListener('change',()=>{render();if(origin&&dest)recommend();}));
+showRoute.addEventListener('change',drawRoutes);
+drawPorts(); syncWx(); render();
+</script>
+</body>
+</html>
